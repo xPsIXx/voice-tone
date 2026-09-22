@@ -1,0 +1,10 @@
+__pycache__/
+*.py[cod]
+.env
+*.env
+deploy_key
+deploy_key.pub
+.kanban/
+models/
+*.gguf
+*.bin

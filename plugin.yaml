@@ -1,0 +1,9 @@
+name: voice-tone
+version: 1.0.0
+kind: standalone
+description: >
+  STT provider for Hermes: transcribes audio via the voice-tone container
+  (faster-whisper + emotion2vec) and returns the transcript with an optional
+  tone tag, e.g. "[tone: neutral]". No pip dependencies — stdlib only.
+author: voice-tone
+license: MIT
