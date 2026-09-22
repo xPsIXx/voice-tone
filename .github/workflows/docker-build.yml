@@ -8,8 +8,6 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  # Docker image references must be lowercase; github.repository can be mixed-case.
-  IMAGE_NAME: ${{ github.repository | lowercase }}
 
 jobs:
   build:
@@ -21,6 +19,12 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      # Docker image references are case-sensitive lowercase; github.repository can be mixed-case.
+      # GitHub Actions expressions have no string case functions, so do it in the shell.
+      - name: Lowercase image name
+        id: img
+        run: echo "name=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_OUTPUT"
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
@@ -39,7 +43,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          images: ${{ env.REGISTRY }}/${{ steps.img.outputs.name }}
           tags: |
             type=raw,value=latest,enable={{is_default_branch}}
             type=semver,pattern={{version}}
