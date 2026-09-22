@@ -77,15 +77,17 @@ class Provider:
                 "error": f"voice-tone container error: {exc}",
             }
 
-        text = (payload.get("text") or "").strip()
+        raw = (payload.get("text") or "").strip()
         tone = payload.get("tone")
         threshold = float(os.environ.get("TONE_CONFIDENCE", "0.6"))
-        if tone and float(payload.get("confidence", 0)) >= threshold:
-            text = f"{text}\n[tone: {tone}]" if text else f"[tone: {tone}]"
+        # Tag only when there is actual speech: emotion2vec can hallucinate a
+        # confident label on silence, which must not surface as a transcript.
+        if raw and tone and float(payload.get("confidence", 0)) >= threshold:
+            raw = f"{raw}\n[tone: {tone}]"
 
         return {
-            "success": bool(text),
-            "transcript": text,
+            "success": bool(raw),
+            "transcript": raw,
             "provider": self.name,
-            **({"error": "empty transcript"} if not text else {}),
+            **({} if raw else {"error": "empty transcript"}),
         }
