@@ -1,9 +1,7 @@
-# CPU-only torch first (small wheel); then the rest from PyPI.
+# CPU-only torch first (small wheel); the rest from PyPI.
 --extra-index-url https://download.pytorch.org/whl/cpu
 torch==2.5.1+cpu
 fastapi==0.115.6
 uvicorn[standard]==0.34.0
 faster-whisper==1.2.1
-transformers==4.57.1
-numpy<2
-python-multipart==0.0.20
+funasr==1.4.16

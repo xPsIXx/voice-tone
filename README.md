@@ -18,7 +18,7 @@ voice note ──> voice-tone container (faster-whisper + emotion2vec+)
 - **Container** (`app/main.py`, `Dockerfile`): FastAPI service.
   - `GET /health` — liveness + loaded model info
   - `POST /transcribe` — multipart audio upload → `{text, tone, confidence, language}`
-  - Whisper via faster-whisper (int8, CPU); emotion via emotion2vec+ base (9 classes)
+  - Whisper via faster-whisper (int8, CPU); emotion via emotion2vec+ base through FunASR (9 classes)
   - Tone is only emitted when confidence ≥ threshold, otherwise `tone: null`
 - **Hermes plugin** (`__init__.py`, `plugin.yaml`): registers a transcription
   provider named `voice-tone`. No pip dependencies — stdlib only.
@@ -28,13 +28,15 @@ voice note ──> voice-tone container (faster-whisper + emotion2vec+)
 | Var | Default | Where | Meaning |
 |-----|---------|-------|---------|
 | `WHISPER_MODEL` | `small` | container | faster-whisper model name |
-| `EMOTION_MODEL` | `emotion2vec/emotion2vec_plus_base` | container | HF emotion model |
+| `EMOTION_MODEL` | `iic/emotion2vec_plus_base` | container | emotion model id (ModelScope) |
+| `HUB` | `ms` | container | `ms` = ModelScope, `hf` = HuggingFace (`emotion2vec/emotion2vec_plus_base`) |
 | `TONE_CONFIDENCE` | `0.6` | both | min confidence to emit a tone tag |
 | `WHISPER_LANGUAGE` | auto | container | force BCP-47 language |
 | `VOICE_TONE_URL` | `http://localhost:8190` | plugin | container base URL |
 
-No secrets required. Models download from HuggingFace on first start into the
-`/models` volume — mount a persistent path there so updates don't re-download.
+No secrets required. Models download on first start into the `/models` volume
+(Whisper from HuggingFace, emotion2vec+ from ModelScope) — mount a persistent
+path there so updates don't re-download.
 
 ## Run
 

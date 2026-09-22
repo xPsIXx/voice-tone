@@ -1,9 +1,16 @@
 FROM python:3.12-slim
 
 ENV HF_HOME=/models \
+    MODELSCOPE_CACHE=/models/modelscope \
     PATH="/usr/local/bin:$PATH"
 
 WORKDIR /app
+
+# ffmpeg + libsndfile: audio decoding for ogg/opus voice notes (faster-whisper, soundfile)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        ffmpeg \
+        libsndfile1 \
+    && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt

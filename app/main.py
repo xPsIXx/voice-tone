@@ -6,38 +6,45 @@ designed to back Hermes' STT provider plugin.
 Endpoints:
   GET  /health      -> liveness + loaded model info
   POST /transcribe  -> multipart audio upload -> {text, tone, confidence}
+
+Models load during startup (lifespan); the server only accepts traffic once
+both models are ready.
 """
 
 import io
 import os
+import tempfile
 import time
+import wave
 
 import numpy as np
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from faster_whisper import WhisperModel
-from transformers import AutoModelForAudioClassification, AutoProcessor
+from funasr import AutoModel
 
 WHISPER_MODEL = os.environ.get("WHISPER_MODEL", "small")
-EMOTION_MODEL = os.environ.get("EMOTION_MODEL", "emotion2vec/emotion2vec_plus_base")
+# ModelScope id by default (guaranteed path per FunASR docs). If ModelScope is
+# unreachable from your network, set EMOTION_MODEL=emotion2vec/emotion2vec_plus_base HUB=hf
+EMOTION_MODEL = os.environ.get("EMOTION_MODEL", "iic/emotion2vec_plus_base")
+HUB = os.environ.get("HUB", "ms")  # "ms" (ModelScope) or "hf" (HuggingFace)
 TONE_CONFIDENCE = float(os.environ.get("TONE_CONFIDENCE", "0.6"))
 SAMPLE_RATE = 16000
 
-app = FastAPI(title="voice-tone")
-
 whisper: WhisperModel | None = None
-emo_model: AutoModelForAudioClassification | None = None
-emo_proc: AutoProcessor | None = None
+emo_model: AutoModel | None = None
 
 
-@app.on_event("startup")
-def load_models() -> None:
-    global whisper, emo_model, emo_proc
+async def lifespan(_: FastAPI):
+    """Load models before the server accepts traffic."""
+    global whisper, emo_model
     t0 = time.time()
     whisper = WhisperModel(WHISPER_MODEL, device="cpu", compute_type="int8")
-    emo_model = AutoModelForAudioClassification.from_pretrained(EMOTION_MODEL)
-    emo_model.eval()
-    emo_proc = AutoProcessor.from_pretrained(EMOTION_MODEL)
+    emo_model = AutoModel(model=EMOTION_MODEL, hub=HUB, device="cpu", disable_update=True)
     print(f"models ready in {time.time() - t0:.1f}s", flush=True)
+    yield
+
+
+app = FastAPI(title="voice-tone", lifespan=lifespan)
 
 
 def decode_audio(data: bytes) -> np.ndarray:
@@ -77,19 +84,33 @@ async def transcribe(file: UploadFile = File(...)) -> dict:
     )
     text = " ".join(seg.text.strip() for seg in segments).strip()
 
-    import torch  # local import keeps startup lighter
-
-    inputs = emo_proc(audio, sampling_rate=SAMPLE_RATE, return_tensors="pt")
-    with torch.no_grad():
-        logits = emo_model(**inputs).logits
-    probs = torch.softmax(logits, dim=-1)[0]
-    conf, idx = probs.max(dim=0)
-    id2label = emo_model.config.id2label
-    tone = id2label[int(idx)] if float(conf) >= TONE_CONFIDENCE else None
+    # emotion2vec+ via FunASR: res[0] -> {"labels": [...], "scores": [...]}
+    tone, conf = None, 0.0
+    try:
+        clip = audio[: SAMPLE_RATE * 30]  # first 30s is plenty for utterance-level emotion
+        with tempfile.NamedTemporaryFile(suffix=".wav") as tmp:
+            pcm = np.clip(clip * 32767, -32768, 32767).astype("<i2").tobytes()
+            with wave.open(tmp.name, "wb") as w:
+                w.setnchannels(1)
+                w.setsampwidth(2)
+                w.setframerate(SAMPLE_RATE)
+                w.writeframes(pcm)
+            res = emo_model.generate(
+                input=tmp.name, granularity="utterance", extract_embedding=False
+            )
+        if res and res[0].get("labels"):
+            labels, scores = res[0]["labels"], res[0]["scores"]
+            conf = max(float(s) for s in scores)
+            best = labels[int(np.argmax(scores))]
+            tone = str(best).split("/")[-1]  # strip any path prefix
+            if conf < TONE_CONFIDENCE:
+                tone = None  # low confidence -> no tag, plain transcript
+    except Exception as exc:  # noqa: BLE001 - emotion is best-effort
+        print(f"emotion pass failed: {exc}", flush=True)
 
     return {
         "text": text,
         "tone": tone,
-        "confidence": round(float(conf), 3),
+        "confidence": round(conf, 3),
         "language": info.language,
     }

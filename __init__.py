@@ -47,26 +47,26 @@ class Provider:
         boundary = "----voice-tone-boundary-9f2c"
         filename = os.path.basename(file_path)
 
-        with open(file_path, "rb") as fh:
-            audio = fh.read()
-
-        body = b"".join(
-            [
-                f"--{boundary}\r\n".encode(),
-                f'Content-Disposition: form-data; name="file"; filename="{filename}"\r\n'.encode(),
-                f"Content-Type: {mime}\r\n\r\n".encode(),
-                audio,
-                f"\r\n--{boundary}--\r\n".encode(),
-            ]
-        )
-
-        req = urllib.request.Request(
-            f"{self.base_url}/transcribe",
-            data=body,
-            headers={"Content-Type": f"multipart/form-data; boundary={boundary}"},
-            method="POST",
-        )
         try:
+            with open(file_path, "rb") as fh:
+                audio = fh.read()
+
+            body = b"".join(
+                [
+                    f"--{boundary}\r\n".encode(),
+                    f'Content-Disposition: form-data; name="file"; filename="{filename}"\r\n'.encode(),
+                    f"Content-Type: {mime}\r\n\r\n".encode(),
+                    audio,
+                    f"\r\n--{boundary}--\r\n".encode(),
+                ]
+            )
+
+            req = urllib.request.Request(
+                f"{self.base_url}/transcribe",
+                data=body,
+                headers={"Content-Type": f"multipart/form-data; boundary={boundary}"},
+                method="POST",
+            )
             with urllib.request.urlopen(req, timeout=300) as resp:
                 payload = json.loads(resp.read().decode())
         except Exception as exc:  # noqa: BLE001 - envelope contract: never raise
