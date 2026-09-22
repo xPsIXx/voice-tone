@@ -37,8 +37,20 @@ def register(context) -> None:  # noqa: ANN001 - PluginContext
 class Provider(_Base):
     name = "voice-tone"
 
-    def __init__(self) -> None:
-        self.base_url = os.environ.get("VOICE_TONE_URL", "http://localhost:8190").rstrip("/")
+    def _base_urls(self) -> list[str]:
+        """Candidate container URLs, tried in order per call (not cached) so .env
+        edits apply without a gateway restart. Order: explicit env override,
+        docker network alias, host bridge IP (port 8192). Set
+        VOICE_TONE_SINGLE_URL=1 to try only the explicit URL (QA isolation)."""
+        candidates = []
+        url = os.environ.get("VOICE_TONE_URL", "").rstrip("/")
+        if url:
+            candidates.append(url)
+        elif os.environ.get("VOICE_TONE_SINGLE_URL") == "1":
+            return []  # single mode without explicit URL -> error path (QA isolation)
+        else:
+            candidates += ["http://voice-tone:8190", "http://172.17.0.1:8192"]
+        return candidates
 
     def default_model(self) -> str:
         return "small"
@@ -67,14 +79,23 @@ class Provider(_Base):
                 ]
             )
 
-            req = urllib.request.Request(
-                f"{self.base_url}/transcribe",
-                data=body,
-                headers={"Content-Type": f"multipart/form-data; boundary={boundary}"},
-                method="POST",
-            )
-            with urllib.request.urlopen(req, timeout=300) as resp:
-                payload = json.loads(resp.read().decode())
+            payload = None
+            last_exc: Optional[Exception] = None
+            for base in self._base_urls():
+                try:
+                    req = urllib.request.Request(
+                        f"{base}/transcribe",
+                        data=body,
+                        headers={"Content-Type": f"multipart/form-data; boundary={boundary}"},
+                        method="POST",
+                    )
+                    with urllib.request.urlopen(req, timeout=300) as resp:
+                        payload = json.loads(resp.read().decode())
+                    break
+                except Exception as exc:  # noqa: BLE001 - try next candidate
+                    last_exc = exc
+            if payload is None:
+                raise last_exc or RuntimeError("no container URL configured")
         except Exception as exc:  # noqa: BLE001 - envelope contract: never raise
             return {
                 "success": False,
