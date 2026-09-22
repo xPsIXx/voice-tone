@@ -13,8 +13,11 @@ Config (config.yaml)::
     provider: voice-tone
 
 Env vars:
-  VOICE_TONE_URL     container base URL (default http://localhost:8190)
-  TONE_CONFIDENCE    min emotion confidence to emit a tag (default 0.6)
+  VOICE_TONE_URL         container base URL override (default: docker alias, then bridge IP)
+  TONE_CONFIDENCE        min emotion confidence to emit a tag (default 0.6)
+  VOICE_TONE_LOCAL_FALLBACK  fall back to in-process local whisper if container is down (default 1)
+  VOICE_TONE_JOURNAL     Obsidian file for the per-note tone journal (default
+                         /obsidian/Kyle/Voice-Tone-Journal.md, "0" disables)
 """
 
 from __future__ import annotations
@@ -110,10 +113,14 @@ class Provider(_Base):
 
         raw = (payload.get("text") or "").strip()
         tone = payload.get("tone")
+        confidence = float(payload.get("confidence", 0))
         threshold = float(os.environ.get("TONE_CONFIDENCE", "0.6"))
+
+        self._append_journal(raw, tone, confidence)
+
         # Tag only when there is actual speech: emotion2vec can hallucinate a
         # confident label on silence, which must not surface as a transcript.
-        if raw and tone and float(payload.get("confidence", 0)) >= threshold:
+        if raw and tone and confidence >= threshold:
             raw = f"{raw}\n[tone: {tone}]"
 
         return {
@@ -122,6 +129,30 @@ class Provider(_Base):
             "provider": self.name,
             **({} if raw else {"error": "empty transcript"}),
         }
+
+    def _journal_path(self) -> Optional[str]:
+        """Obsidian tone-journal path; '0' disables logging entirely."""
+        val = os.environ.get("VOICE_TONE_JOURNAL", "").strip()
+        if val == "0":
+            return None
+        return val or "/obsidian/Kyle/Voice-Tone-Journal.md"
+
+    def _append_journal(self, text: str, tone: Optional[str], confidence: float) -> None:
+        """Append one row per note to the Obsidian tone journal. Best-effort only —
+        a missing vault must never break transcription."""
+        try:
+            path = self._journal_path()
+            if not path or not text:
+                return
+            from datetime import datetime
+
+            now = datetime.now().astimezone()
+            excerpt = " ".join(text.split())[:80].replace("|", "\\|")
+            tone_cell = f"{tone} ({confidence:.2f})" if tone else f"— ({confidence:.2f})"
+            with open(path, "a", encoding="utf-8") as fh:
+                fh.write(f"| {now:%H:%M} | {tone_cell} | {excerpt} |\n")
+        except Exception:  # noqa: BLE001 - journal is best-effort, never raise
+            pass
 
     def _local_fallback(self, file_path: str) -> Optional[Dict[str, Any]]:
         """Last-resort in-process transcription via Hermes' built-in local faster-whisper
