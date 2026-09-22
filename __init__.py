@@ -97,11 +97,15 @@ class Provider(_Base):
             if payload is None:
                 raise last_exc or RuntimeError("no container URL configured")
         except Exception as exc:  # noqa: BLE001 - envelope contract: never raise
+            container_error = f"voice-tone container error: {exc}"
+            fb = self._local_fallback(file_path)
+            if fb is not None:
+                return fb
             return {
                 "success": False,
                 "transcript": "",
                 "provider": self.name,
-                "error": f"voice-tone container error: {exc}",
+                "error": container_error,
             }
 
         raw = (payload.get("text") or "").strip()
@@ -117,4 +121,41 @@ class Provider(_Base):
             "transcript": raw,
             "provider": self.name,
             **({} if raw else {"error": "empty transcript"}),
+        }
+
+    def _local_fallback(self, file_path: str) -> Optional[Dict[str, Any]]:
+        """Last-resort in-process transcription via Hermes' built-in local faster-whisper
+        (same model singleton/cache as the 'local' provider — no emotion tag). Used only
+        when the container is unreachable or errors. Returns None only when the fallback
+        backend itself is unavailable (then the caller surfaces the original error)."""
+        if os.environ.get("VOICE_TONE_LOCAL_FALLBACK", "1") != "1":
+            return None
+        try:
+            from tools.transcription_tools import transcribe_audio_local_fallback
+        except Exception:  # noqa: BLE001 - standalone QA / minimal env
+            return None
+        try:
+            result = transcribe_audio_local_fallback(file_path, model="small")
+        except Exception as exc:  # noqa: BLE001 - envelope contract: never raise
+            return {
+                "success": False,
+                "transcript": "",
+                "provider": self.name,
+                "error": f"voice-tone container error (local fallback also failed): {exc}",
+            }
+        if not isinstance(result, dict) or not result.get("success"):
+            # Local backend reported its own failure — surface it rather than the
+            # generic connection error so the real cause is visible.
+            return {
+                "success": False,
+                "transcript": "",
+                "provider": self.name,
+                "error": f"voice-tone container error (local fallback also failed): {result.get('error') if isinstance(result, dict) else 'unknown'}",
+            }
+        text = (result.get("transcript") or "").strip()
+        return {
+            "success": bool(text),
+            "transcript": text,
+            "provider": self.name,
+            **({} if text else {"error": "empty transcript"}),
         }
