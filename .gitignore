@@ -8,3 +8,4 @@ deploy_key.pub
 models/
 *.gguf
 *.bin
+Dockerfile.qa

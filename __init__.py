@@ -23,12 +23,18 @@ import os
 import urllib.request
 from typing import Any, Dict, Optional
 
+try:  # inside Hermes: must subclass the ABC or the registry rejects us (isinstance check)
+    from agent.transcription_provider import TranscriptionProvider as _Base
+except ImportError:  # standalone QA harness outside Hermes
+    class _Base:  # type: ignore[no-redef]
+        pass
+
 
 def register(context) -> None:  # noqa: ANN001 - PluginContext
     context.register_transcription_provider(Provider())
 
 
-class Provider:
+class Provider(_Base):
     name = "voice-tone"
 
     def __init__(self) -> None:
