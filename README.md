@@ -32,7 +32,8 @@ voice note ──> voice-tone container (faster-whisper + emotion2vec+)
 | `HUB` | `ms` | container | `ms` = ModelScope, `hf` = HuggingFace (`emotion2vec/emotion2vec_plus_base`) |
 | `TONE_CONFIDENCE` | `0.6` | both | min confidence to emit a tone tag |
 | `WHISPER_LANGUAGE` | auto | container | force BCP-47 language |
-| `VOICE_TONE_URL` | `http://localhost:8190` | plugin | container base URL |
+| `VOICE_TONE_URL` | auto | plugin | container base URL override; unset = try docker alias `voice-tone:8190`, then bridge IP `172.17.0.1:8192` |
+| `VOICE_TONE_LOCAL_FALLBACK` | `1` | plugin | fall back to in-process local faster-whisper (no tone tag) when the container is down; `0` = hard error instead |
 
 No secrets required. Models download on first start into the `/models` volume
 (Whisper from HuggingFace, emotion2vec+ from ModelScope) — mount a persistent
