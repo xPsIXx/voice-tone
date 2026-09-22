@@ -81,6 +81,9 @@ async def transcribe(file: UploadFile = File(...)) -> dict:
         audio,
         language=os.environ.get("WHISPER_LANGUAGE") or None,
         vad_filter=True,
+        # Anti-hallucination: never let a decoded (possibly hallucinated) token
+        # condition the next segment's decoding.
+        condition_on_previous_text=False,
     )
     text = " ".join(seg.text.strip() for seg in segments).strip()
 
