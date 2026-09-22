@@ -3,5 +3,7 @@
 torch==2.5.1+cpu
 fastapi==0.115.6
 uvicorn[standard]==0.34.0
+python-multipart==0.0.32
 faster-whisper==1.2.1
 funasr==1.4.16
+numpy>=1.24,<3
